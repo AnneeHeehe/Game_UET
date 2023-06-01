@@ -7,6 +7,10 @@ SDL_Renderer* renderer = NULL;
 Mix_Chunk* Piece_Move = NULL;
 Mix_Chunk* Level_Up = NULL;
 Mix_Chunk* Line_Clear = NULL;
+Mix_Chunk* Best_Line_Clear = NULL;
+Mix_Chunk* Rotation = NULL;
+Mix_Chunk* Hard_Drop = NULL;
+Mix_Chunk* Game_Over = NULL;
 
 const u8 FRAMES_PER_DROP[] = {
     48,
@@ -125,9 +129,6 @@ struct Piece_State
     s32 rotation;
 };
 
-//test 
-//update code
-
 
 struct Game_State
 {
@@ -155,37 +156,6 @@ struct Game_State
     f32 highlight_end_time;
     f32 time;
 };
-
-
-///TEST/////
-class LButton
-{
-public:
-    //Initializes internal variables
-    LButton();
-
-    //Sets top left position
-    void setPosition(int x, int y);
-
-    //Handles mouse event
-    void handleEvent(SDL_Event* e);
-
-private:
-    //Top left position
-    SDL_Point mPosition;
-};
-
-LButton::LButton()
-{
-    mPosition.x = 0;
-    mPosition.y = 0;
-}
-
-void LButton::setPosition(int x, int y)
-{
-    mPosition.x = x;
-    mPosition.y = y;
-}
 
 
 
@@ -419,7 +389,6 @@ void generate_next_piece()
 {
     next_piece = {};
     next_piece.tetrino_index = (u8)random_int(0, ARRAY_COUNT(TETRINOS));
-    // Các thiết lập khác cho next_piece
 }
 
 void
@@ -531,29 +500,29 @@ update_game_gameover(Game_State* game, const Input_State* input)
     }
 }
 
-bool loadMedia();
+u32 highest_score = 0;
 
 void
 update_game_line(Game_State* game)
 {
-    if (loadMedia())
+    if (game->time >= game->highlight_end_time)
     {
-        if (game->time >= game->highlight_end_time)
-        {
-            clear_lines(game->board, WIDTH, HEIGHT, game->lines);
-            game->line_count += game->pending_line_count;
-            game->points += compute_points(game->level, game->pending_line_count);
-
-            s32 lines_for_next_level = get_lines_for_next_level(game->start_level,
-                game->level);
-            if (game->line_count >= lines_for_next_level)
-            {
-                ++game->level;
-                Mix_PlayChannel(-1, Level_Up, 0);
-            }
-
-            game->phase = GAME_PHASE_PLAY;
+        clear_lines(game->board, WIDTH, HEIGHT, game->lines);
+        game->line_count += game->pending_line_count;
+        game->points += compute_points(game->level, game->pending_line_count);
+        if (highest_score < game->points) {
+            highest_score = game->points;
         }
+
+        s32 lines_for_next_level = get_lines_for_next_level(game->start_level,
+            game->level);
+        if (game->line_count >= lines_for_next_level)
+        {
+            ++game->level;
+            Mix_PlayChannel(-1, Level_Up, 0);
+        }
+
+        game->phase = GAME_PHASE_PLAY;
     }
 }
 
@@ -562,10 +531,7 @@ update_game_line(Game_State* game)
 
 bool init()
 {
-    //Initialization flag
     bool success = true;
-
-    //Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
         printf("SDL could not initialize! SDL Error: %s\n", SDL_GetError());
@@ -573,13 +539,10 @@ bool init()
     }
     else
     {
-        //Set texture filtering to linear
         if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"))
         {
             printf("Warning: Linear texture filtering not enabled!");
         }
-
-        //Create window
         window = SDL_CreateWindow("Tetris", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
         if (window == NULL)
         {
@@ -588,7 +551,6 @@ bool init()
         }
         else
         {
-            //Create vsynced renderer for window
             renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
             if (renderer == NULL)
             {
@@ -597,18 +559,7 @@ bool init()
             }
             else
             {
-                //Initialize renderer color
                 SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-                //Initialize PNG loading
-                int imgFlags = IMG_INIT_PNG;
-                if (!(IMG_Init(imgFlags) & imgFlags))
-                {
-                    printf("SDL_image could not initialize! SDL_image Error: %s\n", IMG_GetError());
-                    success = false;
-                }
-
-                //Initialize SDL_mixer
                 if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0)
                 {
                     printf("SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError());
@@ -621,45 +572,10 @@ bool init()
     return success;
 }
 
-
-bool loadMedia()
-{
-    //Loading success flag
-    bool success = true;
-
-    //Load sound effects
-    Piece_Move = Mix_LoadWAV("sound_effect/piece_move.wav");
-    if (Piece_Move == NULL)
-    {
-        printf("Failed to load scratch sound effect! SDL_mixer Error: %s\n", Mix_GetError());
-        success = false;
-    }
-
-    Level_Up = Mix_LoadWAV("sound_effect/level_up.wav");
-    if (Level_Up == NULL)
-    {
-        printf("Failed to load high sound effect! SDL_mixer Error: %s\n", Mix_GetError());
-        success = false;
-    }
-
-    Line_Clear = Mix_LoadWAV("sound_effect/line_clear.wav");
-    if (Line_Clear == NULL)
-    {
-        printf("Failed to load medium sound effect! SDL_mixer Error: %s\n", Mix_GetError());
-        success = false;
-    }
-
-    return success;
-}
-
-
 void
 update_game_play(Game_State* game,
     const Input_State* input)
 {
-    if (loadMedia())
-    {
-
         Piece_State piece = game->piece;
         if (input->dleft > 0)
         {
@@ -674,6 +590,7 @@ update_game_play(Game_State* game,
         if (input->dup > 0)
         {
             piece.rotation = (piece.rotation + 1) % 4;
+            Mix_PlayChannel(-1, Rotation, 0);
         }
 
         if (check_piece_valid(&piece, game->board, WIDTH, HEIGHT))
@@ -690,6 +607,7 @@ update_game_play(Game_State* game,
         if (input->da > 0)
         {
             while (soft_drop(game));
+            Mix_PlayChannel(-1, Hard_Drop, 0);
         }
 
         while (game->time >= game->next_drop_time)
@@ -702,15 +620,21 @@ update_game_play(Game_State* game,
         {
             game->phase = GAME_PHASE_LINE;
             game->highlight_end_time = game->time + 0.5f;
-            Mix_PlayChannel(-1, Line_Clear, 0);
+            if (game->pending_line_count == 4)
+            {
+                Mix_PlayChannel(-1, Best_Line_Clear, 0);
+            }
+            else
+                Mix_PlayChannel(-1, Line_Clear, 0);
         }
 
         s32 game_over_row = 0;
         if (!check_row_empty(game->board, WIDTH, game_over_row))
         {
             game->phase = GAME_PHASE_GAMEOVER;
+            Mix_PlayChannel(-1, Game_Over, 0);
         }
-    }
+    
 }
 
 void
@@ -731,10 +655,6 @@ update_game(Game_State* game,
     case GAME_PHASE_GAMEOVER:
         update_game_gameover(game, input);
         break;
-
-        //TEST///
-    //case GAME_PHASE_MENU:
-
     }
 }
 
@@ -797,6 +717,8 @@ draw_string(SDL_Renderer* renderer,
     SDL_RenderCopy(renderer, texture, 0, &rect);
     SDL_FreeSurface(surface);
     SDL_DestroyTexture(texture);
+    surface = NULL;
+    texture = NULL;
 }
 
 void
@@ -898,7 +820,7 @@ render_game(const Game_State* game,
     s32 margin_y_board_next_piece = 150;
 
     draw_board(renderer, game->board, WIDTH, HEIGHT, 0, margin_y);
-    //draw lalala
+    //draw 
     draw_board(renderer, game->board_next_piece, BOARD_NEXT_PIECE, BOARD_NEXT_PIECE, 350, margin_y_board_next_piece);
     
     if (game->phase == GAME_PHASE_PLAY)
@@ -925,17 +847,6 @@ render_game(const Game_State* game,
 
         draw_piece(renderer, &piece, 0, margin_y, true);
     }
-
-    ////////TEST////////
-    if (game->phase == GAME_PHASE_MENU)
-    {
-        s32 x = SCREEN_WIDTH / 2;
-        s32 y = SCREEN_HEIGHT / 2;
-        draw_string(renderer, font, "START!!",
-            x, y, TEXT_ALIGN_CENTER, highlight_color);
-    }
-
-    ///fail///
 
     if (game->phase == GAME_PHASE_LINE)
     {
@@ -991,50 +902,32 @@ render_game(const Game_State* game,
 
     draw_string(renderer, font, "NEXT PIECE",
         490, 120, TEXT_ALIGN_RIGHT, highlight_color);
+
+    snprintf(buffer, sizeof(buffer), "HIGHEST POINT: %d", highest_score);
+    draw_string(renderer, font, buffer, 5, 95, TEXT_ALIGN_LEFT, highlight_color);
 }
 
 int
 main(int argc, char** argv)
 {
-    if (init())
+    if (!init())
     {
-
-
-        /*if (SDL_Init(SDL_INIT_VIDEO) < 0)
-        {
-            return 1;
-        }*/
-
+        printf("Failed to initialize!\n");
+    }
+    else
+    {
         if (TTF_Init() < 0)
         {
             return 2;
         }
 
-        /*if (SDL_Init(SDL_INIT_AUDIO) < 0)
-        {
-            printf("SDL could not initialize! SDL Error: %s\n", SDL_GetError());
-            return 1;
-        }
-        else
-        {
-            if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0)
-            {
-                printf("SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError());
-                return 1;
-            }
-        }*/
-
-        /*SDL_Window* window = SDL_CreateWindow(
-            "Tetris",
-            SDL_WINDOWPOS_UNDEFINED,
-            SDL_WINDOWPOS_UNDEFINED,
-            SCREEN_WIDTH,
-            SCREEN_HEIGHT,
-            SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
-        SDL_Renderer* renderer = SDL_CreateRenderer(
-            window,
-            -1,
-            SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);*/
+        Piece_Move = Mix_LoadWAV("new_sound/piece_move.wav");
+        Level_Up = Mix_LoadWAV("new_sound/level_up.wav");
+        Line_Clear = Mix_LoadWAV("new_sound/line_clear.wav");
+        Best_Line_Clear = Mix_LoadWAV("new_sound/best_line_clear.wav");
+        Rotation = Mix_LoadWAV("new_sound/rotation.wav");
+        Hard_Drop = Mix_LoadWAV("new_sound/hard_drop.wav");
+        Game_Over = Mix_LoadWAV("new_sound/game_over.wav");
 
         const char* font_name = "lazy.ttf";
         TTF_Font* font = TTF_OpenFont(font_name, 24);
@@ -1056,8 +949,6 @@ main(int argc, char** argv)
                 {
                     quit = true;
                 }
-                ////test/////////
-
             }
 
             s32 key_count;
@@ -1093,13 +984,28 @@ main(int argc, char** argv)
 
         TTF_CloseFont(font);
         SDL_DestroyRenderer(renderer);
-
+        SDL_DestroyWindow(window);
+        renderer = NULL;
+        window = NULL;
+        
         Mix_FreeChunk(Piece_Move);
         Mix_FreeChunk(Level_Up);
         Mix_FreeChunk(Line_Clear);
+        Mix_FreeChunk(Best_Line_Clear);
+        Mix_FreeChunk(Rotation);
+        Mix_FreeChunk(Hard_Drop);
+        Mix_FreeChunk(Game_Over);
 
-        SDL_Quit();
+        Piece_Move = NULL;
+        Level_Up = NULL;
+        Line_Clear = NULL;
+        Best_Line_Clear = NULL;
+        Rotation = NULL;
+        Hard_Drop = NULL;
+        Game_Over = NULL;
 
-        return 0;
+        SDL_Quit();  
     }
+
+    return 0;
 }
